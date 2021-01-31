@@ -19,16 +19,54 @@ go get github.com/TJM/gin-gonic-oidcauth
 Import it in your code:
 
 ```go
-import "github.com/TJM/gin-gonic-oidcauth"
+import oidcauth "github.com/TJM/gin-gonic-oidcauth"
 ```
 
 ## Example
 
 Prerequisites:
 
-* Identity Provider (IdP) Server that supports OIDC - You can use something like [DEX](github.com/dexidp/dex) to test with. Alternatively, you could also use Google Accounts, GitHub accounts, etc.
+* Identity Provider (IdP) Server that supports OIDC - You can use something like [DEX](github.com/dexidp/dex) to test with. Alternatively, you could also use Google Accounts, GitHub accounts, etc. The examples below will use Google Accounts. See: [go-oidc examples readme](https://github.com/coreos/go-oidc/tree/v3/example)
 
-See: [example/main.go](example/main.go)
+* Basic Example: [example/basic/main.go](example/basic/main.go)
+
+```go
+package main
+
+import (
+	"net/http"
+
+	oidcauth "github.com/TJM/gin-gonic-oidcauth"
+	"github.com/gin-gonic/gin"
+)
+
+func main() {
+	r := gin.Default()
+
+	// NOTE: DefaultConfig uses Google Accounts - See https://github.com/coreos/go-oidc/blob/v3/example/README.md
+	authConfig := oidcauth.DefaultConfig()
+	auth, err := authConfig.GetOidcAuth()
+	if err != nil {
+		panic("auth setup failed")
+	}
+
+	r.GET("/", func(c *gin.Context) {
+		c.String(http.StatusOK, "Hello, world.")
+	})
+	r.GET("/auth/google/login", auth.AuthLoginHandler)
+	r.GET("/auth/google/callback", auth.AuthCallbackHandler)
+
+	r.Run(":5556")
+}
+```
+
+* Sessions example: [example/sessions/main.go](example/sessions/main.go)
+
+```go
+package main
+
+// TOODO
+```
 
 ## License
 

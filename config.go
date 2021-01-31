@@ -35,7 +35,7 @@ type Config struct {
 	// State is a string that is passed to the authentication provider, and returned to validate we sent the reqest.
 	// 	 Opaque value used to maintain state between the request and the callback.
 	//   Typically, Cross-Site Request Forgery (CSRF, XSRF) mitigation is done by cryptographically binding the value of this parameter with a browser cookie.
-	// Default value is: "DEPRECATED: we should be setting this here."
+	// Default value is: "This should not be a static string."
 	State string
 
 	// Nonce String value used to associate a Client session with an ID Token, and to mitigate replay attacks.
@@ -49,13 +49,14 @@ type Config struct {
 }
 
 // DefaultConfig will create a new config object with defaults
+// NOTE: This matches the examples on https://github.com/coreos/go-oidc/tree/v3/example
 func DefaultConfig() (c *Config) {
 	c = &Config{
-		ClientID:     os.Getenv("OAUTH2_CLIENT_ID"),
-		ClientSecret: os.Getenv("OAUTH2_CLIENT_SECRET"),
+		ClientID:     os.Getenv("GOOGLE_OAUTH2_CLIENT_ID"),
+		ClientSecret: os.Getenv("GOOGLE_OAUTH2_CLIENT_SECRET"),
 		IssuerURL:    "https://accounts.google.com",
 		RedirectURL:  "http://127.0.0.1:5556/auth/google/callback",
-		State:        "I am not sure we should be setting this here.",
+		State:        "This should not be a static string.",
 		Nonce:        "some super secret nonce",
 		Scopes:       []string{oidc.ScopeOpenID, "profile", "email"},
 	}

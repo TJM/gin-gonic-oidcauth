@@ -10,6 +10,7 @@ import (
 func main() {
 	r := gin.Default()
 
+	// NOTE: DefaultConfig uses Google Accounts - See https://github.com/coreos/go-oidc/blob/v3/example/README.md
 	authConfig := oidcauth.DefaultConfig()
 	auth, err := authConfig.GetOidcAuth()
 	if err != nil {
