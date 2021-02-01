@@ -1,6 +1,4 @@
-# `oidcauth` - OIDC Client Authentication middleware for Gin-Gonic
-
-oidcauth is [gin-gonic](https://https://gin-gonic.com/) middleware to enable `oidc` client authentication.
+# `oidcauth` - OIDC Client Authentication for Gin-Gonic
 
 [![Build Status](https://travis-ci.org/TJM/gin-gonic-oidcauth.svg)](https://travis-ci.org/TJM/gin-gonic-oidcauth)
 [![codecov](https://codecov.io/gh/TJM/gin-gonic-oidcauth/branch/master/graph/badge.svg)](https://codecov.io/gh/TJM/gin-gonic-oidcauth)

@@ -6,10 +6,9 @@ import (
 	"os"
 
 	"github.com/coreos/go-oidc/v3/oidc"
-	"github.com/gin-gonic/gin"
 )
 
-// Config represents all available options for oidc middleware.
+// Config represents available options for oidcauth.
 type Config struct {
 	// ClientID is the OAUTH2 Client ID
 	// Default value is: (read from OS ENV: OAUTH2_CLIENT_ID)
@@ -69,21 +68,6 @@ func (c Config) Validate() (err error) {
 	}
 
 	return
-}
-
-// Default returns the oidcauth middleware with default configuration.
-func Default() gin.HandlerFunc {
-	config := DefaultConfig()
-	return New(config)
-}
-
-// New returns the oidcauth middleware with user-defined custom configuration.
-func New(c *Config) gin.HandlerFunc {
-	// oidcauth := newOidcAuth(c)
-	return func(c *gin.Context) {
-		panic("Not Yet Implemented")
-		// oidcauth.doSomething(c)
-	}
 }
 
 // GetOidcAuth returns the configured OIDC authentication controller?
