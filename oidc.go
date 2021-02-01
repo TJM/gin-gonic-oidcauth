@@ -27,6 +27,7 @@ type OidcAuth struct {
 	Verifier     *oidc.IDTokenVerifier
 	Oauth2Config *oauth2.Config
 	NonceService *nonce.NonceService
+	Debug        bool
 }
 
 // newOidcAuth returns the oidcAuth struct, expects config to have been validated
@@ -118,17 +119,17 @@ func (o *OidcAuth) AuthCallbackHandler(c *gin.Context) {
 		return
 	}
 
+	// Save to session
 	session := sessions.Default(c)
 	session.AddFlash("Authentication Successful!")
 
 	// Process Results - just dump everything into the session for now (probably not a good idea)
 	session.Set("AccessToken", oauth2Token.AccessToken)
 	session.Set("TokenType", oauth2Token.TokenType)
-	// session.Set("Expiry", oauth2Token.Expiry)
+	// session.Set("Expiry", oauth2Token.Expiry) // sessions doesn't like time.Time
+	delete(claims, "nonce") // TODO: allow user to specify which claims to remove (or include?) in session
 	for claim, val := range claims {
-		if claim != "nonce" { // skip saving nonce
-			session.Set(claim, val)
-		}
+		session.Set(claim, val)
 	}
 
 	redirectURL := "/"
@@ -144,12 +145,19 @@ func (o *OidcAuth) AuthCallbackHandler(c *gin.Context) {
 		return
 	}
 
+	if o.Debug {
+		c.JSON(http.StatusOK, gin.H{
+			"redirectURL": redirectURL,
+			"oauth2Token": oauth2Token,
+			"claims":      claims,
+		})
+		return
+	}
 	c.Redirect(http.StatusFound, redirectURL)
 }
 
 // getState will return the state string from the session
 // NOTE: state is a string that is passed to the authentication provider, and returned to validate we sent the reqest.
-
 func (o *OidcAuth) getState(c *gin.Context) string {
 	session := sessions.Default(c)
 	state := session.Get(oidcStateSessionKey)
