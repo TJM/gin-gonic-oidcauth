@@ -9,11 +9,6 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-const (
-	defaultKey  = "github.com/TJM/gin-gonic-oidc-auth"
-	errorFormat = "[oidcauth] ERROR! %s\n"
-)
-
 // Config represents all available options for oidc middleware.
 type Config struct {
 	// ClientID is the OAUTH2 Client ID
@@ -32,17 +27,6 @@ type Config struct {
 	// Default value is: "http://127.0.0.1:5556/auth/google/callback"
 	RedirectURL string
 
-	// State is a string that is passed to the authentication provider, and returned to validate we sent the reqest.
-	// 	 Opaque value used to maintain state between the request and the callback.
-	//   Typically, Cross-Site Request Forgery (CSRF, XSRF) mitigation is done by cryptographically binding the value of this parameter with a browser cookie.
-	// Default value is: "This should not be a static string."
-	State string
-
-	// Nonce String value used to associate a Client session with an ID Token, and to mitigate replay attacks.
-	//   The value is passed through unmodified from the Authentication Request to the ID Token.
-	// Default value is: "I am not sure we should be setting this here."
-	Nonce string
-
 	// Scopes is a list of OIDC Scopes to request.
 	// Default value is: []string{oidc.ScopeOpenID, "profile", "email"}
 	Scopes []string
@@ -56,8 +40,6 @@ func DefaultConfig() (c *Config) {
 		ClientSecret: os.Getenv("GOOGLE_OAUTH2_CLIENT_SECRET"),
 		IssuerURL:    "https://accounts.google.com",
 		RedirectURL:  "http://127.0.0.1:5556/auth/google/callback",
-		State:        "This should not be a static string.",
-		Nonce:        "some super secret nonce",
 		Scopes:       []string{oidc.ScopeOpenID, "profile", "email"},
 	}
 	return
@@ -76,13 +58,13 @@ func (c Config) Validate() (err error) {
 		return
 	}
 
-	if c.RedirectURL == "" { // TODO: Validate that its a properly formed URL
-		err = errors.New("RedirectURL Is required")
+	if c.IssuerURL == "" { // TODO: Validate that its a properly formed URL
+		err = errors.New("IssuerURL Is required")
 		return
 	}
 
-	if c.State == "" {
-		err = errors.New("State Is required")
+	if c.RedirectURL == "" { // TODO: Validate that its a properly formed URL
+		err = errors.New("RedirectURL Is required")
 		return
 	}
 

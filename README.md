@@ -1,6 +1,6 @@
 # `oidcauth` - OIDC Client Authentication middleware for Gin-Gonic
 
-oidcauth is [gin-gonic](https://https://gin-gonic.com/) middleware to enable `oidc` client authentication support.
+oidcauth is [gin-gonic](https://https://gin-gonic.com/) middleware to enable `oidc` client authentication.
 
 [![Build Status](https://travis-ci.org/TJM/gin-gonic-oidcauth.svg)](https://travis-ci.org/TJM/gin-gonic-oidcauth)
 [![codecov](https://codecov.io/gh/TJM/gin-gonic-oidcauth/branch/master/graph/badge.svg)](https://codecov.io/gh/TJM/gin-gonic-oidcauth)
@@ -26,17 +26,23 @@ import oidcauth "github.com/TJM/gin-gonic-oidcauth"
 
 Prerequisites:
 
-* Identity Provider (IdP) Server that supports OIDC - You can use something like [DEX](github.com/dexidp/dex) to test with. Alternatively, you could also use Google Accounts, GitHub accounts, etc. The examples below will use Google Accounts. See: [go-oidc examples readme](https://github.com/coreos/go-oidc/tree/v3/example)
+* Identity Provider (IdP) Server that supports OIDC -
+  You can use something like [DEX](github.com/dexidp/dex) to test with.
+  Alternatively, you could also use Google Accounts, GitHub accounts, etc.
+  The examples below will use Google Accounts. See: [go-oidc examples readme](https://github.com/coreos/go-oidc/tree/v3/example)
 
-* Basic Example: [example/basic/main.go](example/basic/main.go)
+* Sessions example: [example/sessions/main.go](example/sessions/main.go)
 
 ```go
 package main
 
 import (
+	"fmt"
 	"net/http"
 
 	oidcauth "github.com/TJM/gin-gonic-oidcauth"
+	"github.com/gin-contrib/sessions"
+	"github.com/gin-contrib/sessions/cookie"
 	"github.com/gin-gonic/gin"
 )
 
@@ -50,22 +56,31 @@ func main() {
 		panic("auth setup failed")
 	}
 
+	// Session Config (Basic cookies)
+	store := cookie.NewStore([]byte("secret"), nil) // Do not use "secret" in production
+	r.Use(sessions.Sessions("mysession", store))
+
 	r.GET("/", func(c *gin.Context) {
-		c.String(http.StatusOK, "Hello, world.")
+
+		session := sessions.Default(c)
+		var name string
+
+		n := session.Get("name")
+		if n == nil {
+			name = "world"
+		} else {
+			name = n.(string)
+		}
+
+		session.Save()
+		out := fmt.Sprintf("Hello, %s.\n", name)
+		c.String(http.StatusOK, out)
 	})
 	r.GET("/auth/google/login", auth.AuthLoginHandler)
 	r.GET("/auth/google/callback", auth.AuthCallbackHandler)
 
 	r.Run(":5556")
 }
-```
-
-* Sessions example: [example/sessions/main.go](example/sessions/main.go)
-
-```go
-package main
-
-// TOODO
 ```
 
 ## License
