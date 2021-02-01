@@ -29,6 +29,10 @@ type Config struct {
 	// Scopes is a list of OIDC Scopes to request.
 	// Default value is: []string{oidc.ScopeOpenID, "profile", "email"}
 	Scopes []string
+
+	// LoginClaim is the OIDC claim to map to the user's login (username)
+	// Default value is: "email"
+	LoginClaim string
 }
 
 // DefaultConfig will create a new config object with defaults
@@ -40,6 +44,7 @@ func DefaultConfig() (c *Config) {
 		IssuerURL:    "https://accounts.google.com",
 		RedirectURL:  "http://127.0.0.1:5556/auth/google/callback",
 		Scopes:       []string{oidc.ScopeOpenID, "profile", "email"},
+		LoginClaim:   "email",
 	}
 	return
 }
