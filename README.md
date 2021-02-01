@@ -29,7 +29,7 @@ Prerequisites:
   Alternatively, you could also use Google Accounts, GitHub accounts, etc.
   The examples below will use Google Accounts. See: [go-oidc examples readme](https://github.com/coreos/go-oidc/tree/v3/example)
 
-* Sessions example: [example/sessions/main.go](example/sessions/main.go)
+* Sessions example: [example/main.go](example/main.go)
 
 ```go
 package main
