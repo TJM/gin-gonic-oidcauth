@@ -21,7 +21,7 @@ func main() {
 	}
 
 	// Session Config (Basic cookies)
-	store := cookie.NewStore([]byte("secret"), nil) // Do not use "secret" in production
+	store := cookie.NewStore([]byte("secret"), nil) // Do not use "secret", nil in production
 	r.Use(sessions.Sessions("mysession", store))
 
 	r.GET("/", func(c *gin.Context) {
