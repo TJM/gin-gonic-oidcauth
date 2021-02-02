@@ -19,11 +19,11 @@ type Config struct {
 	ClientSecret string
 
 	// IssuerURL is the root URL to theIdentity Provider
-	// Default value is: "https://accounts.google.com"
+	// Default value is: (read from OS ENV: OIDC_ISSUER_URL)
 	IssuerURL string
 
 	// RedirectURL is the path that the Identity Provider will redirect clients to
-	// Default value is: "http://127.0.0.1:5556/auth/google/callback"
+	// Default value is: (read from OS ENV: OIDC_REDIRECT_URL)
 	RedirectURL string
 
 	// Scopes is a list of OIDC Scopes to request.
@@ -60,16 +60,38 @@ type Config struct {
 // NOTE: This matches the examples on https://github.com/coreos/go-oidc/tree/v3/example
 func DefaultConfig() (c *Config) {
 	c = &Config{
-		ClientID:                os.Getenv("GOOGLE_OAUTH2_CLIENT_ID"),
-		ClientSecret:            os.Getenv("GOOGLE_OAUTH2_CLIENT_SECRET"),
-		IssuerURL:               "https://accounts.google.com",
-		RedirectURL:             "http://127.0.0.1:5556/auth/google/callback",
+		ClientID:                os.Getenv("OIDC_CLIENT_ID"),
+		ClientSecret:            os.Getenv("OIDC_CLIENT_SECRET"),
+		IssuerURL:               os.Getenv("OIDC_ISSUER_URL"),
+		RedirectURL:             os.Getenv("OIDC_REDIRECT_URL"),
 		Scopes:                  []string{oidc.ScopeOpenID, "profile", "email"},
 		LoginClaim:              "email",
 		SessionClaims:           []string{"*"},
 		DefaultAuthenticatedURL: "/",
 		LogoutURL:               "/",
 	}
+	return
+}
+
+// ExampleConfigDex will return the config for a default DEX IdP example-app
+// DEX: https://github.com/dexidp/dex
+func ExampleConfigDex() (c *Config) {
+	c = DefaultConfig()
+	c.ClientID = "example-app"
+	c.ClientSecret = "ZXhhbXBsZS1hcHAtc2VjcmV0"
+	c.RedirectURL = "http://127.0.0.1:5555/callback"
+	c.IssuerURL = "http://127.0.0.1:5556/dex"
+	return
+}
+
+// ExampleConfigGoogle will return the config for the Google Accounts IdP like the go-oidc examples
+// go-oidc google example:  https://github.com/coreos/go-oidc/tree/v3/example
+func ExampleConfigGoogle() (c *Config) {
+	c = DefaultConfig()
+	c.ClientID = os.Getenv("GOOGLE_OAUTH2_CLIENT_ID")
+	c.ClientSecret = os.Getenv("GOOGLE_OAUTH2_CLIENT_SECRET")
+	c.RedirectURL = "http://127.0.0.1:5556/auth/google/callback"
+	c.IssuerURL = "https://accounts.google.com"
 	return
 }
 
