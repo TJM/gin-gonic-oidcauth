@@ -2,8 +2,9 @@ package oidcauth
 
 import (
 	"errors"
-	log "log"
 	"net/http"
+
+	log "github.com/sirupsen/logrus"
 
 	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/gin-contrib/sessions"
@@ -16,18 +17,31 @@ import (
 )
 
 const (
-	oidcStateSessionKey   string = "oidc-auth-state"
-	previousURLSessionKey string = "oidc-auth-PreviousURL"
+	// oidcStateSessionKey is used to validate callback from client, see: https://auth0.com/docs/protocols/state-parameters
+	oidcStateSessionKey string = "oidcauth:state"
+
+	// previousURLSessionKey will temporarily hold the URL path that the user was at before authentication started
+	previousURLSessionKey string = "oidcauth:PreviousURL"
+
+	// accessTokenSessionKey is the session key to hold the oauth access token
+	accessTokenSessionKey string = "oidcauth:AccessToken"
+
+	// loginSessionKey is the session key to hold the "login" (username)
+	loginSessionKey string = "oidcauth:login"
+
+	// AuthUserKey stores the authenticated user's login (username or email) in this context key
+	AuthUserKey string = "user"
 )
 
-// OidcAuth handles the authentication?
+// OidcAuth handles OIDC Authentication
 type OidcAuth struct {
 	ctx          context.Context
-	Provider     *oidc.Provider
-	Verifier     *oidc.IDTokenVerifier
-	Oauth2Config *oauth2.Config
-	NonceService *nonce.NonceService
-	Debug        bool
+	provider     *oidc.Provider
+	verifier     *oidc.IDTokenVerifier
+	oauth2Config *oauth2.Config
+	nonceService *nonce.NonceService
+	config       *Config
+	Debug        bool // DUMP oidc paramters as JSON instead of redirecting
 }
 
 // newOidcAuth returns the oidcAuth struct, expects config to have been validated
@@ -40,18 +54,18 @@ func newOidcAuth(c *Config) (o *OidcAuth, err error) {
 	if err != nil {
 		log.Fatal(err)
 	}
-	o.Provider = provider
+	o.provider = provider
 
 	oidcConfig := &oidc.Config{
 		ClientID: c.ClientID,
 	}
 	// Use the nonce source to create a custom ID Token verifier.
-	o.Verifier = o.Provider.Verifier(oidcConfig)
+	o.verifier = o.provider.Verifier(oidcConfig)
 
-	o.Oauth2Config = &oauth2.Config{
+	o.oauth2Config = &oauth2.Config{
 		ClientID:     c.ClientID,
 		ClientSecret: c.ClientSecret,
-		Endpoint:     o.Provider.Endpoint(),
+		Endpoint:     provider.Endpoint(),
 		RedirectURL:  c.RedirectURL,
 		Scopes:       c.Scopes,
 	}
@@ -60,36 +74,81 @@ func newOidcAuth(c *Config) (o *OidcAuth, err error) {
 	if err != nil {
 		log.Fatal(err)
 	}
-	o.NonceService = ns
+	o.nonceService = ns
 
+	o.config = c // Save Config
 	return
 }
 
-// AuthLoginHandler will redirect the user to the authentication provider
-func (o *OidcAuth) AuthLoginHandler(c *gin.Context) {
+// AuthRequired middleware requires OIDC authentication
+// BE CAREFUL Adding this to / (or the top level router)
+func (o *OidcAuth) AuthRequired() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		session := sessions.Default(c)
+		token := session.Get(accessTokenSessionKey)
+		if token == nil {
+			o.doAuthentication(c)
+			c.Abort()
+			return
+		}
+		// TODO: Valdate Token / Expiration? / Extension?
+		l := session.Get(loginSessionKey)
+		if l == nil {
+			o.doAuthentication(c)
+			c.Abort()
+			return
+		}
+		login := l.(string)
+		// The user credentials was found, set user's id to key AuthUserKey in this context, the user's id can be read later using
+		// c.MustGet(oidcauth.AuthUserKey).
+		c.Set(AuthUserKey, login)
+		c.Next()
+	}
+}
+
+// Login will setup the appropriate state and redirect the user to the authentication provider
+func (o *OidcAuth) Login(c *gin.Context) {
 	state := o.generateState(c)
+	nonce := o.generateNonce(c)
 	session := sessions.Default(c)
-	session.Set(previousURLSessionKey, "/") // TODO GET "previous" URL (Safely?)
 	session.Set(oidcStateSessionKey, state)
 	err := session.Save()
 	if err != nil {
 		c.AbortWithError(http.StatusInternalServerError, errors.New("Error saving session: "+err.Error()))
 		return
 	}
-	nonce := o.getNonce(c)
-	c.Redirect(http.StatusFound, o.Oauth2Config.AuthCodeURL(state, oidc.Nonce(nonce)))
+	c.Redirect(http.StatusFound, o.oauth2Config.AuthCodeURL(state, oidc.Nonce(nonce)))
 }
 
-// AuthCallbackHandler will handle the authentication callback (redirect) from the Identity Provider
-// example: /auth/oidc/callback
-func (o *OidcAuth) AuthCallbackHandler(c *gin.Context) {
-	if c.Query("state") != o.getState(c) {
-		log.Print("state: ", c.Query("state"))
+// Logout will clear the session
+// NOTE: It will not invalidate the OIDC session (Not SSO)
+func (o *OidcAuth) Logout(c *gin.Context) {
+	session := sessions.Default(c)
+	// These Sets will mark the session as "written" and clear the values (jic)
+	session.Set(accessTokenSessionKey, nil)
+	session.Set(loginSessionKey, nil)
+	session.Clear()
+	session.Options(sessions.Options{Path: "/", MaxAge: -1}) // this sets the cookie as expired
+	session.Save()
+	c.Redirect(http.StatusTemporaryRedirect, o.config.LogoutURL)
+}
+
+// AuthCallback will handle the authentication callback (redirect) from the Identity Provider
+//   This is the part that actually "does" the authentication.
+func (o *OidcAuth) AuthCallback(c *gin.Context) {
+	sessionState, err := o.getState(c)
+	if err != nil {
+		c.AbortWithError(http.StatusBadRequest, errors.New("[oidcauth] unable to retrieve state: "+err.Error()))
+		return
+	}
+	if c.Query("state") != sessionState {
+		log.Print("  queryState: ", c.Query("state"))
+		log.Print("sessionState: ", sessionState)
 		c.AbortWithError(http.StatusBadRequest, errors.New("[oidcauth] state did not match"))
 		return
 	}
 
-	oauth2Token, err := o.Oauth2Config.Exchange(o.ctx, c.Query("code"))
+	oauth2Token, err := o.oauth2Config.Exchange(o.ctx, c.Query("code"))
 	if err != nil {
 		c.AbortWithError(http.StatusInternalServerError, errors.New("[oidcauth] Failed to exchange token: "+err.Error()))
 		return
@@ -102,12 +161,12 @@ func (o *OidcAuth) AuthCallbackHandler(c *gin.Context) {
 	}
 
 	// Verify the ID Token signature and nonce.
-	idToken, err := o.Verifier.Verify(o.ctx, rawIDToken)
+	idToken, err := o.verifier.Verify(o.ctx, rawIDToken)
 	if err != nil {
 		c.AbortWithError(http.StatusInternalServerError, errors.New("[oidcauth] Failed to verify ID Token: "+err.Error()))
 		return
 	}
-	if !o.NonceService.Valid(idToken.Nonce) {
+	if !o.nonceService.Valid(idToken.Nonce) {
 		c.AbortWithError(http.StatusInternalServerError, errors.New("[oidcauth] Invalid ID Token nonce"))
 		return
 	}
@@ -124,20 +183,39 @@ func (o *OidcAuth) AuthCallbackHandler(c *gin.Context) {
 	session.AddFlash("Authentication Successful!")
 
 	// Process Results - just dump everything into the session for now (probably not a good idea)
-	session.Set("AccessToken", oauth2Token.AccessToken)
-	session.Set("TokenType", oauth2Token.TokenType)
+	session.Set(accessTokenSessionKey, oauth2Token.AccessToken)
+	// session.Set("TokenType", oauth2Token.TokenType) // Not Needed?
 	// session.Set("Expiry", oauth2Token.Expiry) // sessions doesn't like time.Time
-	delete(claims, "nonce") // TODO: allow user to specify which claims to remove (or include?) in session
-	for claim, val := range claims {
-		session.Set(claim, val)
+	delete(claims, "nonce") // No longer useful
+
+	// Add claims to session
+	if len(o.config.SessionClaims) > 0 {
+		if o.config.SessionClaims[0] == "*" { // Set All Claims in Session
+			for claim, val := range claims {
+				sessionKey := o.config.SessionPrefix + claim
+				session.Set(sessionKey, val)
+			}
+		} else {
+			for _, sessionClaim := range o.config.SessionClaims {
+				if val, ok := claims[sessionClaim]; ok {
+					sessionKey := o.config.SessionPrefix + sessionClaim
+					session.Set(sessionKey, val)
+				}
+			}
+		}
 	}
 
-	redirectURL := "/"
+	// Set login in session
+	if login, ok := claims[o.config.LoginClaim]; ok {
+		session.Set(loginSessionKey, login)
+	}
+
+	redirectURL := o.config.DefaultAuthenticatedURL
 	u := session.Get(previousURLSessionKey)
 	if u != nil {
 		redirectURL = u.(string)
+		session.Delete(previousURLSessionKey)
 	}
-	session.Delete(previousURLSessionKey)
 
 	err = session.Save()
 	if err != nil {
@@ -148,6 +226,8 @@ func (o *OidcAuth) AuthCallbackHandler(c *gin.Context) {
 	if o.Debug {
 		c.JSON(http.StatusOK, gin.H{
 			"redirectURL": redirectURL,
+			"rawIDToken":  rawIDToken,
+			"idToken":     idToken,
 			"oauth2Token": oauth2Token,
 			"claims":      claims,
 		})
@@ -156,20 +236,25 @@ func (o *OidcAuth) AuthCallbackHandler(c *gin.Context) {
 	c.Redirect(http.StatusFound, redirectURL)
 }
 
-// getState will return the state string from the session
+// getState will return the state string (and/or err) from the session
 // NOTE: state is a string that is passed to the authentication provider, and returned to validate we sent the reqest.
-func (o *OidcAuth) getState(c *gin.Context) string {
+func (o *OidcAuth) getState(c *gin.Context) (state string, err error) {
 	session := sessions.Default(c)
-	state := session.Get(oidcStateSessionKey)
+	s := session.Get(oidcStateSessionKey)
 	session.Delete(oidcStateSessionKey)
 	session.Save()
-	if state == nil {
-		return o.generateState(c) // return a new state (which should not match)
+	if s == nil {
+		err = errors.New("state was not found in session")
+		log.Error(err)
+		return
 	}
-	if !o.NonceService.Valid(state.(string)) {
-		return o.generateState(c) // return a new state (which should not match)
+	if !o.nonceService.Valid(s.(string)) {
+		err = errors.New("state was not a valid nonce")
+		log.Error(err)
+		return
 	}
-	return state.(string)
+	state = s.(string)
+	return
 
 }
 
@@ -178,14 +263,34 @@ func (o *OidcAuth) getState(c *gin.Context) string {
 //   Typically, Cross-Site Request Forgery (CSRF, XSRF) mitigation is done by cryptographically
 //   binding the value of this parameter with a browser cookie.
 func (o *OidcAuth) generateState(c *gin.Context) (state string) {
-	return o.getNonce(c) // just use a nonce for now
+	return o.generateNonce(c) // just use a nonce for now
 }
 
-// getNonce will generate a nonce (one time use, random string), aborts on error
-func (o *OidcAuth) getNonce(c *gin.Context) (nonce string) {
-	nonce, err := o.NonceService.Nonce()
+// generateNonce will generate a nonce (one time use, random string), aborts on error
+func (o *OidcAuth) generateNonce(c *gin.Context) (nonce string) {
+	nonce, err := o.nonceService.Nonce()
 	if err != nil {
 		c.AbortWithError(http.StatusInternalServerError, errors.New("Error getting nonce: "+err.Error()))
 	}
+	return
+}
+
+// doAuthentication is designed to be called from middleware when it determines
+//  that the user is not authenticated. It will attempt to return the user to
+//  the path they were requesting when authentication was required.
+func (o *OidcAuth) doAuthentication(c *gin.Context) {
+	session := sessions.Default(c)
+	previousURL := c.Request.RequestURI // Current URL
+	if previousURL == "" {
+		previousURL = o.config.DefaultAuthenticatedURL
+	}
+	session.Set(previousURLSessionKey, c.Request.RequestURI)
+	err := session.Save()
+	if err != nil {
+		log.Error("Error Saving Session: " + err.Error())
+		c.AbortWithError(http.StatusInternalServerError, err)
+	}
+
+	o.Login(c)
 	return
 }
