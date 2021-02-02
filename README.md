@@ -24,10 +24,14 @@ import oidcauth "github.com/TJM/gin-gonic-oidcauth"
 
 Prerequisites:
 
-* Identity Provider (IdP) Server that supports OIDC -
-  You can use something like [DEX](github.com/dexidp/dex) to test with.
-  Alternatively, you could also use Google Accounts, GitHub accounts, etc.
-  The examples below will use Google Accounts. See: [go-oidc examples readme](https://github.com/coreos/go-oidc/tree/v3/example)
+* Oauth2 Identity Provider (IdP) service that supports [OIDC](https://en.wikipedia.org/wiki/OpenID_Connect)
+  * You can use something like [DEX](https://github.com/dexidp/dex) to test with.
+  * Alternatively, you could also use something like:
+    * [Google](https://developers.google.com/identity/protocols/oauth2/openid-connect)
+    * [GitHub](https://plugins.miniorange.com/oauth-openid-login-using-github)
+    * etc
+ 
+The examples below will use Google Accounts. See: [go-oidc examples readme](https://github.com/coreos/go-oidc/tree/v3/example)
 
 * Sessions example: [example/main.go](example/main.go)
 
