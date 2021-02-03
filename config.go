@@ -79,8 +79,8 @@ func ExampleConfigDex() (c *Config) {
 	c = DefaultConfig()
 	c.ClientID = "example-app"
 	c.ClientSecret = "ZXhhbXBsZS1hcHAtc2VjcmV0"
-	c.RedirectURL = "http://127.0.0.1:5555/callback"
 	c.IssuerURL = "http://127.0.0.1:5556/dex"
+	c.RedirectURL = "http://127.0.0.1:5555/callback"
 	return
 }
 
@@ -90,8 +90,8 @@ func ExampleConfigGoogle() (c *Config) {
 	c = DefaultConfig()
 	c.ClientID = os.Getenv("GOOGLE_OAUTH2_CLIENT_ID")
 	c.ClientSecret = os.Getenv("GOOGLE_OAUTH2_CLIENT_SECRET")
-	c.RedirectURL = "http://127.0.0.1:5556/auth/google/callback"
 	c.IssuerURL = "https://accounts.google.com"
+	c.RedirectURL = "http://127.0.0.1:5556/auth/google/callback"
 	return
 }
 
@@ -99,22 +99,22 @@ func ExampleConfigGoogle() (c *Config) {
 func (c Config) Validate() (err error) {
 
 	if c.ClientID == "" {
-		err = errors.New("ClientID Is required")
+		err = errors.New("ClientID is required")
 		return
 	}
 
 	if c.ClientSecret == "" {
-		err = errors.New("ClientSecret Is required")
+		err = errors.New("ClientSecret is required")
 		return
 	}
 
 	if c.IssuerURL == "" { // TODO: Validate that its a properly formed URL
-		err = errors.New("IssuerURL Is required")
+		err = errors.New("IssuerURL is required")
 		return
 	}
 
 	if c.RedirectURL == "" { // TODO: Validate that its a properly formed URL
-		err = errors.New("RedirectURL Is required")
+		err = errors.New("RedirectURL is required")
 		return
 	}
 
