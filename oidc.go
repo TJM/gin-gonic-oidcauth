@@ -3,6 +3,7 @@ package oidcauth
 import (
 	"errors"
 	"net/http"
+	"time"
 
 	log "github.com/sirupsen/logrus"
 
@@ -28,6 +29,9 @@ const (
 
 	// loginSessionKey is the session key to hold the "login" (username)
 	loginSessionKey string = "oidcauth:login"
+
+	// expirationSessionKey is the when the session is expired (in unixtime as an uint)
+	expirationSessionKey string = "oidcauth:sessionExpiration"
 
 	// AuthUserKey stores the authenticated user's login (username or email) in this context key
 	AuthUserKey string = "user"
@@ -85,21 +89,29 @@ func newOidcAuth(c *Config) (o *OidcAuth, err error) {
 func (o *OidcAuth) AuthRequired() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		session := sessions.Default(c)
-		token := session.Get(accessTokenSessionKey)
-		if token == nil {
-			o.doAuthentication(c)
-			c.Abort()
-			return
-		}
-		// TODO: Valdate Token / Expiration? / Extension?
+		e := session.Get(expirationSessionKey)
 		l := session.Get(loginSessionKey)
-		if l == nil {
+		if l == nil || e == nil {
 			o.doAuthentication(c)
 			c.Abort()
 			return
 		}
+
 		login := l.(string)
-		// The user credentials was found, set user's id to key AuthUserKey in this context, the user's id can be read later using
+		exp := time.Unix(int64(e.(float64)), 0) // e (float64) -> int64 -> unixtime -> time.Time
+		now := time.Now()
+
+		if now.After(exp) {
+			log.WithFields(log.Fields{
+				"login": login,
+				"exp":   exp,
+				"now":   now,
+			}).Info("Session Expired")
+			o.doAuthentication(c)
+			c.Abort()
+			return
+		}
+		// The user credentials was found, set user's loginClaim to key AuthUserKey in this context, the user's id can be read later using
 		// c.MustGet(oidcauth.AuthUserKey).
 		c.Set(AuthUserKey, login)
 		c.Next()
@@ -125,7 +137,7 @@ func (o *OidcAuth) Login(c *gin.Context) {
 func (o *OidcAuth) Logout(c *gin.Context) {
 	session := sessions.Default(c)
 	// These Sets will mark the session as "written" and clear the values (jic)
-	session.Set(accessTokenSessionKey, nil)
+	// session.Set(accessTokenSessionKey, nil)
 	session.Set(loginSessionKey, nil)
 	session.Clear()
 	session.Options(sessions.Options{Path: "/", MaxAge: -1}) // this sets the cookie as expired
@@ -183,7 +195,7 @@ func (o *OidcAuth) AuthCallback(c *gin.Context) {
 	session.AddFlash("Authentication Successful!")
 
 	// Process Results - just dump everything into the session for now (probably not a good idea)
-	session.Set(accessTokenSessionKey, oauth2Token.AccessToken)
+	// session.Set(accessTokenSessionKey, oauth2Token.AccessToken) // sessions doesn't like very long AccessToken
 	// session.Set("TokenType", oauth2Token.TokenType) // Not Needed?
 	// session.Set("Expiry", oauth2Token.Expiry) // sessions doesn't like time.Time
 	delete(claims, "nonce") // No longer useful
@@ -208,6 +220,11 @@ func (o *OidcAuth) AuthCallback(c *gin.Context) {
 	// Set login in session
 	if login, ok := claims[o.config.LoginClaim]; ok {
 		session.Set(loginSessionKey, login)
+	}
+
+	// Set expiration in session
+	if exp, ok := claims["exp"]; ok {
+		session.Set(expirationSessionKey, exp)
 	}
 
 	redirectURL := o.config.DefaultAuthenticatedURL
