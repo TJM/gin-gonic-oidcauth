@@ -81,24 +81,24 @@ func TestConfig(t *testing.T) {
 			})
 		})
 
-		g.Describe("GetOidcAuth", func() {
-			auth, err := GetOidcAuth(ExampleConfigDex())
+		// g.Describe("GetOidcAuth", func() {
+		// 	auth, err := GetOidcAuth(ExampleConfigDex())
 
-			g.It("should work", func() {
-				Expect(auth).NotTo(BeNil())
-				Expect(err).To(BeNil())
-			})
-		})
+		// 	g.It("should work", func() {
+		// 		Expect(auth).NotTo(BeNil())
+		// 		Expect(err).To(BeNil())
+		// 	})
+		// })
 
-		g.Describe("c.GetOidcAuth", func() {
-			c := ExampleConfigDex()
-			auth, err := c.GetOidcAuth()
+		// g.Describe("c.GetOidcAuth", func() {
+		// 	c := ExampleConfigDex()
+		// 	auth, err := c.GetOidcAuth()
 
-			g.It("should work", func() {
-				Expect(auth).NotTo(BeNil())
-				Expect(err).To(BeNil())
-			})
-		})
+		// 	g.It("should work", func() {
+		// 		Expect(auth).NotTo(BeNil())
+		// 		Expect(err).To(BeNil())
+		// 	})
+		// })
 
 	})
 }
