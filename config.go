@@ -2,10 +2,10 @@ package oidcauth
 
 import (
 	"errors"
-	"log"
 	"os"
 
 	"github.com/coreos/go-oidc/v3/oidc"
+	log "github.com/sirupsen/logrus"
 )
 
 // Config represents available options for oidcauth.
@@ -130,7 +130,8 @@ func GetOidcAuth(c *Config) (o *OidcAuth, err error) {
 func (c *Config) GetOidcAuth() (o *OidcAuth, err error) {
 	err = c.Validate()
 	if err != nil {
-		log.Fatal(err)
+		log.Error("Error validating config: " + err.Error())
+		return
 	}
 	return newOidcAuth(c)
 }
