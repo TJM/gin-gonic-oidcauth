@@ -52,7 +52,8 @@ func newOidcAuth(c *Config) (o *OidcAuth, err error) {
 
 	provider, err := oidc.NewProvider(o.ctx, c.IssuerURL)
 	if err != nil {
-		log.Fatal(err)
+		log.Error("Error getting oidc provider: " + err.Error())
+		return nil, err
 	}
 	o.provider = provider
 
@@ -72,7 +73,8 @@ func newOidcAuth(c *Config) (o *OidcAuth, err error) {
 
 	ns, err := nonce.NewNonceService(metrics.NoopRegisterer, 0, "oidc")
 	if err != nil {
-		log.Fatal(err)
+		log.Error("Error creating NonceService: " + err.Error())
+		return nil, err
 	}
 	o.nonceService = ns
 
