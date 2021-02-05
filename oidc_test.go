@@ -16,6 +16,7 @@ import (
 
 func TestOidc(t *testing.T) {
 	g := goblin.Goblin(t)
+	var cookies []*http.Cookie
 
 	//special hook for gomega
 	RegisterFailHandler(func(m string, _ ...int) { g.Fail(m) })
@@ -42,7 +43,7 @@ func TestOidc(t *testing.T) {
 			w := httptest.NewRecorder()
 			r.ServeHTTP(w, req)
 
-			cookies := w.Result().Cookies()
+			cookies = w.Result().Cookies()
 			redirect, err := w.Result().Location()
 			if err != nil {
 				panic(err)
@@ -51,29 +52,52 @@ func TestOidc(t *testing.T) {
 			g.It("should have sent us cookies", func() {
 				Expect(len(cookies)).To(BeNumerically(">", 0))
 			})
-			g.It("should send us a cookie named 'oidcauth-example'", func() {
-				Expect(cookies[0].Name).To(Equal("oidcauth-example"))
-			})
 			g.It("should return a redirect", func() {
 				Expect(w.Code).To(Equal(http.StatusFound))
 				Expect(redirect.String()).NotTo(BeEmpty())
 			})
 
 			g.Describe("authenticate", func() {
+				client := new(http.Client)
 				req, _ := http.NewRequest("GET", redirect.String(), nil)
-				r.ServeHTTP(w, req)
+				// TODO Make request against something that will auth
+				resp, err := client.Do(req)
 
-				redirect2, err := w.Result().Location()
-				if err != nil {
-					panic(err)
-				}
-
-				g.It("should return a redirect", func() {
-					Expect(w.Code).To(Equal(http.StatusFound))
-					Expect(redirect2.String()).NotTo(BeEmpty())
+				g.It("should return a login screen?", func() {
+					Expect(resp.Status).To(Equal(http.StatusOK))
+					Expect(err).NotTo(BeNil())
 				})
 
-				fmt.Print("R2: ", redirect2)
+				g.Describe("callback after auth", func() {
+					// this should be a redirect from auth above
+					state := redirect.Query().Get("state")
+					callbackURL := "/callback?state=" + state
+					fmt.Println("callbackURL: " + callbackURL)
+					req, _ := http.NewRequest("GET", callbackURL, nil)
+
+					g.It("request should have cookies", func() {
+						Expect(len(req.Cookies())).To(BeNumerically(">", 0))
+					})
+					// set session cookie(s)
+					for _, cookie := range cookies {
+						req.AddCookie(cookie)
+					}
+					r.ServeHTTP(w, req)
+
+					cookies = w.Result().Cookies()
+					redirect, err := w.Result().Location()
+					if err != nil {
+						panic(err)
+					}
+
+					g.It("should have sent us cookies", func() {
+						Expect(len(cookies)).To(BeNumerically(">", 0))
+					})
+					g.It("should return a redirect", func() {
+						Expect(w.Code).To(Equal(http.StatusFound))
+						Expect(redirect.String()).To(ContainSubstring("/private"))
+					})
+				})
 			})
 
 		})
