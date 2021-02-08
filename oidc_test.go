@@ -3,6 +3,7 @@ package oidcauth
 import (
 	"fmt"
 	"io"
+	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -29,6 +30,7 @@ func TestOidc(t *testing.T) {
 
 		g.Describe("newOidcAuth with invalid url", func() {
 			config := ExampleConfigDex()
+			config.IssuerURL = "http://localhost:12345" // NOTE: this port should be unused, or maybe we could creat a server that just 404s?
 			auth, err := config.GetOidcAuth()
 
 			g.It("should error when trying to connect", func() {
@@ -49,8 +51,14 @@ func TestOidc(t *testing.T) {
 				panic(err)
 			}
 
-			g.It("should have sent us cookies", func() {
-				Expect(len(cookies)).To(BeNumerically(">", 0))
+			for i, c := range cookies {
+				fmt.Println("Cookie", i, c.Value)
+			}
+			fmt.Println("Number of cookies: ", len(cookies))
+
+			g.It("should have sent us only one cookie", func() {
+				fmt.Println("Number of cookies: ", len(cookies))
+				Expect(len(cookies)).To(BeNumerically("==", 1))
 			})
 			g.It("should return a redirect", func() {
 				Expect(w.Code).To(Equal(http.StatusFound))
@@ -68,27 +76,58 @@ func TestOidc(t *testing.T) {
 					Expect(err).NotTo(BeNil())
 				})
 
+				g.Describe("callback without session cookie", func() {
+					state := redirect.Query().Get("state")
+					code := "somethingCompletelyInvalid"
+					callbackURL := fmt.Sprintf("/callback?state=%s&code=%s", state, code)
+					req, _ := http.NewRequest("GET", callbackURL, nil)
+					w := httptest.NewRecorder()
+					r.ServeHTTP(w, req)
+					resp := w.Result()
+					body, _ := ioutil.ReadAll(resp.Body)
+					fmt.Printf("Body: %s\n", string(body))
+
+					g.It("should return error", func() {
+						Expect(w.Result().StatusCode).To(BeEquivalentTo(400))
+					})
+					// g.It("should be an error about state not found", func() {
+					// 	Expect(string(body)).To(ContainSubstring("state was not found in session"))
+					// })
+				})
+
+				g.Describe("callback with non matching state", func() {
+					// this should be a redirect from auth above
+					state := "somethingCompletelyInvalid"
+					code := "somethingCompletelyInvalid"
+					callbackURL := fmt.Sprintf("/callback?state=%s&code=%s", state, code)
+					req, _ := http.NewRequest("GET", callbackURL, nil)
+					req.AddCookie(cookies[0])
+					fmt.Println(cookies[0])
+					fmt.Println(cookies[1])
+
+					w := httptest.NewRecorder()
+					r.ServeHTTP(w, req)
+
+					g.It("should return error", func() {
+						Expect(w.Result().StatusCode).To(BeEquivalentTo(400))
+					})
+				})
+
 				g.Describe("callback after auth", func() {
 					// this should be a redirect from auth above
 					state := redirect.Query().Get("state")
-					callbackURL := "/callback?state=" + state
-					fmt.Println("callbackURL: " + callbackURL)
+					code := "somethingCompletelyInvalid"
+					callbackURL := fmt.Sprintf("/callback?state=%s&code=%s", state, code)
 					req, _ := http.NewRequest("GET", callbackURL, nil)
-
-					g.It("request should have cookies", func() {
-						Expect(len(req.Cookies())).To(BeNumerically(">", 0))
-					})
-					// set session cookie(s)
-					for _, cookie := range cookies {
-						req.AddCookie(cookie)
-					}
+					req.AddCookie(cookies[0])
+					w := httptest.NewRecorder()
 					r.ServeHTTP(w, req)
 
 					cookies = w.Result().Cookies()
-					redirect, err := w.Result().Location()
-					if err != nil {
-						panic(err)
-					}
+					// redirect, err := w.Result().Location()
+					// if err != nil {
+					// 	panic(err)
+					// }
 
 					g.It("should have sent us cookies", func() {
 						Expect(len(cookies)).To(BeNumerically(">", 0))
