@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 	"time"
+	"sync"
 
 	log "github.com/sirupsen/logrus"
 
@@ -24,9 +25,6 @@ const (
 	// previousURLSessionKey will temporarily hold the URL path that the user was at before authentication started
 	previousURLSessionKey string = "oidcauth:PreviousURL"
 
-	// accessTokenSessionKey is the session key to hold the oauth access token
-	accessTokenSessionKey string = "oidcauth:AccessToken"
-
 	// loginSessionKey is the session key to hold the "login" (username)
 	loginSessionKey string = "oidcauth:login"
 
@@ -36,6 +34,9 @@ const (
 	// AuthUserKey stores the authenticated user's login (username or email) in this context key
 	AuthUserKey string = "user"
 )
+
+var AccessTokenMap sync.Map
+var RefreshTokenMap sync.Map
 
 // OidcAuth handles OIDC Authentication
 type OidcAuth struct {
@@ -98,7 +99,7 @@ func (o *OidcAuth) AuthRequired() gin.HandlerFunc {
 		}
 
 		login := l.(string)
-		exp := time.Unix(int64(e.(float64)), 0) // e (float64) -> int64 -> unixtime -> time.Time
+		exp := time.Unix(e.(int64),0) // e (float64) -> int64 -> unixtime -> time.Time
 		now := time.Now()
 
 		if now.After(exp) {
@@ -107,9 +108,12 @@ func (o *OidcAuth) AuthRequired() gin.HandlerFunc {
 				"exp":   exp,
 				"now":   now,
 			}).Info("Session Expired")
-			o.doAuthentication(c)
-			c.Abort()
-			return
+
+			if !o.doRefreshToken(c) {
+				o.doAuthentication(c)
+				c.Abort()
+				return
+			}
 		}
 		// The user credentials was found, set user's loginClaim to key AuthUserKey in this context, the user's id can be read later using
 		// c.MustGet(oidcauth.AuthUserKey).
@@ -117,6 +121,93 @@ func (o *OidcAuth) AuthRequired() gin.HandlerFunc {
 		c.Next()
 	}
 }
+
+func (o *OidcAuth) doRefreshToken(c *gin.Context) bool {
+	session := sessions.Default(c)
+	l := session.Get(loginSessionKey)
+	e := session.Get(expirationSessionKey)
+	if l == nil || e == nil {
+		// info in session not found.
+		return false
+	}
+	loginKey := l.(string)
+
+	r, _ := RefreshTokenMap.Load(loginKey)
+
+	if r == nil {
+		// no refresh token found => reauthenticate
+		return false
+	}
+
+	refreshToken := r.(string)
+
+	ts := o.oauth2Config.TokenSource(o.ctx, &oauth2.Token{
+		RefreshToken: refreshToken,
+	})
+
+	newToken, err := ts.Token()
+	if err != nil {
+		return false
+	}
+
+	session.Set(expirationSessionKey, newToken.Expiry.Unix())
+	session.Save()
+
+	AccessTokenMap.Store(loginKey, newToken.AccessToken)
+	RefreshTokenMap.Store(loginKey, newToken.RefreshToken)
+	return true
+}
+
+/*
+func (o *OidcAuth) TokenRefreshMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		session := sessions.Default(c)
+		l := session.Get(loginSessionKey)
+		e := session.Get(expirationSessionKey)
+		if l == nil || e == nil {
+			c.Next()
+			return
+		}
+
+		loginKey := l.(string)
+
+		r, _ := RefreshTokenMap.Load(loginKey)
+
+		if r == nil {
+			c.Next()
+			return
+		}
+
+		refreshToken := r.(string)
+
+		expiryUnix := e.(int64)
+
+		if time.Now().Unix() < expiryUnix {
+			c.Next()
+			return
+		}
+
+		// Versuch, das Token zu erneuern
+		ts := o.oauth2Config.TokenSource(o.ctx, &oauth2.Token{
+			RefreshToken: refreshToken,
+		})
+
+		newToken, err := ts.Token()
+		if err != nil {
+			c.Next()
+			return
+		}
+
+		session.Set(expirationSessionKey, newToken.Expiry.Unix())
+		session.Save()
+
+		AccessTokenMap.Store(loginKey, newToken.AccessToken)
+		RefreshTokenMap.Store(loginKey, newToken.RefreshToken)
+
+		c.Next()
+	}
+}
+*/
 
 // Login will setup the appropriate state and redirect the user to the authentication provider
 func (o *OidcAuth) Login(c *gin.Context) {
@@ -195,9 +286,12 @@ func (o *OidcAuth) AuthCallback(c *gin.Context) {
 	session.AddFlash("Authentication Successful!")
 
 	// Process Results - just dump everything into the session for now (probably not a good idea)
-	// session.Set(accessTokenSessionKey, oauth2Token.AccessToken) // sessions doesn't like very long AccessToken
+
 	// session.Set("TokenType", oauth2Token.TokenType) // Not Needed?
 	// session.Set("Expiry", oauth2Token.Expiry) // sessions doesn't like time.Time
+
+	session.Set(expirationSessionKey, oauth2Token.Expiry.Unix())
+
 	delete(claims, "nonce") // No longer useful
 
 	// Add claims to session
@@ -220,13 +314,17 @@ func (o *OidcAuth) AuthCallback(c *gin.Context) {
 	// Set login in session
 	if login, ok := claims[o.config.LoginClaim]; ok {
 		session.Set(loginSessionKey, login)
+		AccessTokenMap.Store(login.(string), oauth2Token.AccessToken)
+		RefreshTokenMap.Store(login.(string), oauth2Token.RefreshToken)
 	}
+
 
 	// Set expiration in session
+	/*
 	if exp, ok := claims["exp"]; ok {
-		session.Set(expirationSessionKey, exp)
+		session.Set(expirationSessionKey, exp.(string))
 	}
-
+	*/
 	redirectURL := o.config.DefaultAuthenticatedURL
 	u := session.Get(previousURLSessionKey)
 	if u != nil {
