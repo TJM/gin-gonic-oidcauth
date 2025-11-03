@@ -3,8 +3,8 @@ package oidcauth
 import (
 	"errors"
 	"net/http"
-	"time"
 	"sync"
+	"time"
 
 	log "github.com/sirupsen/logrus"
 
@@ -99,7 +99,44 @@ func (o *OidcAuth) AuthRequired() gin.HandlerFunc {
 		}
 
 		login := l.(string)
-		exp := time.Unix(e.(int64),0) // e (float64) -> int64 -> unixtime -> time.Time
+		exp := time.Unix(e.(int64), 0) // e (float64) -> int64 -> unixtime -> time.Time
+		now := time.Now()
+
+		if now.After(exp) {
+			log.WithFields(log.Fields{
+				"login": login,
+				"exp":   exp,
+				"now":   now,
+			}).Info("Session Expired")
+
+			if !o.doRefreshToken(c) {
+				o.doAuthentication(c)
+				c.Abort()
+				return
+			}
+		}
+		// The user credentials was found, set user's loginClaim to key AuthUserKey in this context, the user's id can be read later using
+		// c.MustGet(oidcauth.AuthUserKey).
+		c.Set(AuthUserKey, login)
+		c.Next()
+	}
+}
+
+// AuthOptional middleware with optional OIDC authentication
+// but also does not ensure that the AuthUserKey is set
+func (o *OidcAuth) AuthOptional() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		session := sessions.Default(c)
+		e := session.Get(expirationSessionKey)
+		l := session.Get(loginSessionKey)
+		if l == nil || e == nil {
+			// not logged in? no problem
+			c.Next()
+			return
+		}
+
+		login := l.(string)
+		exp := time.Unix(int64(e.(float64)), 0) // e (float64) -> int64 -> unixtime -> time.Time
 		now := time.Now()
 
 		if now.After(exp) {
@@ -237,7 +274,8 @@ func (o *OidcAuth) Logout(c *gin.Context) {
 }
 
 // AuthCallback will handle the authentication callback (redirect) from the Identity Provider
-//   This is the part that actually "does" the authentication.
+//
+//	This is the part that actually "does" the authentication.
 func (o *OidcAuth) AuthCallback(c *gin.Context) {
 	sessionState, err := o.getState(c)
 	if err != nil {
@@ -318,12 +356,11 @@ func (o *OidcAuth) AuthCallback(c *gin.Context) {
 		RefreshTokenMap.Store(login.(string), oauth2Token.RefreshToken)
 	}
 
-
 	// Set expiration in session
 	/*
-	if exp, ok := claims["exp"]; ok {
-		session.Set(expirationSessionKey, exp.(string))
-	}
+		if exp, ok := claims["exp"]; ok {
+			session.Set(expirationSessionKey, exp.(string))
+		}
 	*/
 	redirectURL := o.config.DefaultAuthenticatedURL
 	u := session.Get(previousURLSessionKey)
@@ -374,9 +411,10 @@ func (o *OidcAuth) getState(c *gin.Context) (state string, err error) {
 }
 
 // generateState will generate the random string to be used for "state" in the oidc requests
-// 	 Opaque value used to maintain state between the request and the callback.
-//   Typically, Cross-Site Request Forgery (CSRF, XSRF) mitigation is done by cryptographically
-//   binding the value of this parameter with a browser cookie.
+//
+//		 Opaque value used to maintain state between the request and the callback.
+//	  Typically, Cross-Site Request Forgery (CSRF, XSRF) mitigation is done by cryptographically
+//	  binding the value of this parameter with a browser cookie.
 func (o *OidcAuth) generateState(c *gin.Context) (state string) {
 	return o.generateNonce(c) // just use a nonce for now
 }
@@ -391,8 +429,9 @@ func (o *OidcAuth) generateNonce(c *gin.Context) (nonce string) {
 }
 
 // doAuthentication is designed to be called from middleware when it determines
-//  that the user is not authenticated. It will attempt to return the user to
-//  the path they were requesting when authentication was required.
+//
+//	that the user is not authenticated. It will attempt to return the user to
+//	the path they were requesting when authentication was required.
 func (o *OidcAuth) doAuthentication(c *gin.Context) {
 	session := sessions.Default(c)
 	previousURL := c.Request.RequestURI // Current URL
